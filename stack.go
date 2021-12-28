@@ -8,43 +8,96 @@ type Stack struct {
 }
 
 func NewStack() *Stack {
+	return NewStackWithInitialSizeHint(100)
+}
+
+func NewStackWithInitialSizeHint(initialElementStorageSize uint) *Stack {
 	m := newStackManipulator(100)
+	go m.Start()
 	return &Stack{
 		manipulator:                       m,
 		channelOfOperationsForManipulator: m.requestChannel(),
 	}
 }
 
-func (stack *Stack) NewStackWithInitialSizeHint(initialElementStorageSize uint) {
-
-}
-
 func (stack *Stack) WithAMaximumDepthOf(maximumNumberOfAllowedElements uint) *Stack {
+	responseChannel := make(chan *stackManipulationResponse)
+	stack.channelOfOperationsForManipulator <- &stackManipulationMessage{
+		operation:       setMaximumDepth,
+		depth:           maximumNumberOfAllowedElements,
+		responseChannel: responseChannel,
+	}
+
+	response := <-responseChannel
+
+	if response.operationError != nil {
+		panic(response.operationError.Error())
+	}
+
 	return stack
 }
 
 func (stack *Stack) SetMaximumDepthTo(maximumNumberOfAllowedElements uint) *Stack {
-	return stack
+	return stack.WithAMaximumDepthOf(maximumNumberOfAllowedElements)
 }
 
 func (stack *Stack) Push(value interface{}) (cannotPushBecauseStackIsFull bool) {
-	return true
+	responseChannel := make(chan *stackManipulationResponse)
+	stack.channelOfOperationsForManipulator <- &stackManipulationMessage{
+		operation:       push,
+		valueToPush:     value,
+		responseChannel: responseChannel,
+	}
+
+	response := <-responseChannel
+
+	return response.stackIsEmptyOrFullBeforeOperation
 }
 
 func (stack *Stack) Pop() (value interface{}, stackWasEmptyBeforePop bool) {
-	return nil, true
+	responseChannel := make(chan *stackManipulationResponse)
+	stack.channelOfOperationsForManipulator <- &stackManipulationMessage{
+		operation:       pop,
+		responseChannel: responseChannel,
+	}
+
+	response := <-responseChannel
+
+	return response.poppedValueOrCurrentDepth, response.stackIsEmptyOrFullBeforeOperation
 }
 
 func (stack *Stack) Depth() uint {
-	return 0
+	responseChannel := make(chan *stackManipulationResponse)
+	stack.channelOfOperationsForManipulator <- &stackManipulationMessage{
+		operation:       getDepth,
+		responseChannel: responseChannel,
+	}
+
+	response := <-responseChannel
+
+	return response.poppedValueOrCurrentDepth.(uint)
 }
 
 func (stack *Stack) IsEmpty() bool {
-	return true
+	responseChannel := make(chan *stackManipulationResponse)
+	stack.channelOfOperationsForManipulator <- &stackManipulationMessage{
+		operation:       getDepth,
+		responseChannel: responseChannel,
+	}
+
+	response := <-responseChannel
+
+	return response.poppedValueOrCurrentDepth.(uint) == 0
 }
 
 func (stack *Stack) ResetToEmpty() {
+	responseChannel := make(chan *stackManipulationResponse)
+	stack.channelOfOperationsForManipulator <- &stackManipulationMessage{
+		operation:       resetToEmpty,
+		responseChannel: responseChannel,
+	}
 
+	<-responseChannel
 }
 
 type stackOperation int
