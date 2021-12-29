@@ -12,7 +12,7 @@ func NewStack() *Stack {
 }
 
 func NewStackWithInitialSizeHint(initialElementStorageSize uint) *Stack {
-	m := newStackManipulator(100)
+	m := newStackManipulator(initialElementStorageSize)
 	go m.Start()
 	return &Stack{
 		manipulator:                       m,
@@ -179,7 +179,13 @@ func (manipulator *stackManipulator) push(value interface{}) (stackWasAlreadyFul
 	}
 
 	manipulator.indexInSliceOfHead++
-	manipulator.stackBackingSlice[manipulator.indexInSliceOfHead] = value
+
+	if manipulator.currentStackDepth >= uint(len(manipulator.stackBackingSlice)) {
+		manipulator.stackBackingSlice = append(manipulator.stackBackingSlice, value)
+	} else {
+		manipulator.stackBackingSlice[manipulator.indexInSliceOfHead] = value
+	}
+
 	manipulator.currentStackDepth++
 
 	return false

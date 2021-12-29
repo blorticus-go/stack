@@ -9,10 +9,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestNonConcurrentNonCircularStack(t *testing.T) {
+func TestNonConcurrentNonCircularStackWithoutMax(t *testing.T) {
 	g := NewGomegaWithT(t)
 
-	s := stack.NewStack()
+	s := stack.NewStackWithInitialSizeHint(4)
 
 	for _, testCase := range []*stackOperationTestCase{
 		{testname: "New Clear Stack Initial Check", operation: "check", expectedStackDepthAfterOperation: 0},
@@ -48,9 +48,65 @@ func TestNonConcurrentNonCircularStack(t *testing.T) {
 	}
 }
 
+func TestNonConcurrentNonCircularStackWithMax(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	s := stack.NewStack().WithAMaximumDepthOf(4)
+
+	for _, testCase := range []*stackOperationTestCase{
+		{testname: "New Clear Stack Initial Check", operation: "check", expectedStackDepthAfterOperation: 0},
+		{testname: "New Clear Stack Pop", operation: "pop", expectStackToHaveBeenEmpty: true, expectedStackDepthAfterOperation: 0},
+
+		{testname: "Push first value", operation: "push", valueToPush: "first", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Push second value", operation: "push", valueToPush: "second", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Push third value", operation: "push", valueToPush: "third", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+
+		{testname: "Pop with first three values", operation: "pop", expectedPopValue: "third", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 2},
+
+		{testname: "Push fourth value", operation: "push", valueToPush: "fourth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+
+		{testname: "First pop after fourth push", operation: "pop", expectedPopValue: "fourth", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Second pop after fourth push", operation: "pop", expectedPopValue: "second", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 1},
+
+		{testname: "Push fifth value", operation: "push", valueToPush: "fifth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Push sixth value", operation: "push", valueToPush: "sixth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+		{testname: "Push seventh value", operation: "push", valueToPush: "seventh", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 4},
+		{testname: "Push eighth", operation: "push", valueToPush: "eighth", expectStackToHaveBeenFull: true, expectedStackDepthAfterOperation: 4},
+		{testname: "Push ninth value", operation: "push", valueToPush: "ninth", expectStackToHaveBeenFull: true, expectedStackDepthAfterOperation: 4},
+
+		{testname: "First pop after ninth push", operation: "pop", expectedPopValue: "seventh", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 3},
+		{testname: "Second pop after ninth push", operation: "pop", expectedPopValue: "sixth", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Third pop after ninth push", operation: "pop", expectedPopValue: "fifth", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Fourth pop after ninth push", operation: "pop", expectedPopValue: "first", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 0},
+		{testname: "Seventh pop after ninth push", operation: "pop", expectStackToHaveBeenEmpty: true, expectedStackDepthAfterOperation: 0},
+		{testname: "Eighth pop after ninth push", operation: "pop", expectStackToHaveBeenEmpty: true, expectedStackDepthAfterOperation: 0},
+	} {
+		testCase.evaluateAgainstStack(s, g)
+	}
+}
+
+func TestReset(t *testing.T) {
+	g := NewGomegaWithT(t)
+	s := stack.NewStack()
+
+	for _, testCase := range []*stackOperationTestCase{
+		{testname: "New Clear Stack Initial Check", operation: "check", expectedStackDepthAfterOperation: 0},
+		{testname: "Reset of Empty Stack", operation: "reset", expectedStackDepthAfterOperation: 0},
+		{testname: "Push First Value", operation: "push", valueToPush: "first", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Push second value", operation: "push", valueToPush: "second", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Push third value", operation: "push", valueToPush: "third", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+		{testname: "Reset of Stack With Three Values", operation: "reset", expectedStackDepthAfterOperation: 0},
+		{testname: "Push Third Value", operation: "push", valueToPush: "third", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Push Fourth value", operation: "push", valueToPush: "fourth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Push Fifth value", operation: "push", valueToPush: "fifth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+	} {
+		testCase.evaluateAgainstStack(s, g)
+	}
+}
+
 type stackOperationTestCase struct {
 	testname                         string
-	operation                        string // "push", "pop", "check"
+	operation                        string // "push", "pop", "check", "reset"
 	valueToPush                      string
 	expectedPopValue                 string
 	expectStackToHaveBeenEmpty       bool
@@ -76,6 +132,9 @@ func (testCase *stackOperationTestCase) evaluateAgainstStack(s *stack.Stack, g *
 			g.Expect(stackWasAlreadyEmpty).To(BeFalse(), fmt.Sprintf("[%s] stack should be empty on pop", testCase.testname))
 			g.Expect(poppedValue.(string)).To(Equal(testCase.expectedPopValue), fmt.Sprintf("[%s] popped value should be", testCase.expectedPopValue))
 		}
+
+	case "reset":
+		s.ResetToEmpty()
 	}
 
 	if s.Depth() != testCase.expectedStackDepthAfterOperation {
