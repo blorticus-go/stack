@@ -85,6 +85,67 @@ func TestNonConcurrentNonCircularStackWithMax(t *testing.T) {
 	}
 }
 
+func TestNonConcurrentRoundedDiscardingStack(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	s := stack.NewBoundedDiscardingStack(4)
+
+	for _, testCase := range []*stackOperationTestCase{
+		{testname: "New Clear Stack Initial Check", operation: "check", expectedStackDepthAfterOperation: 0},
+		{testname: "New Clear Stack Pop", operation: "pop", expectStackToHaveBeenEmpty: true, expectedStackDepthAfterOperation: 0},
+
+		{testname: "Push first value", operation: "push", valueToPush: "first", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Push second value", operation: "push", valueToPush: "second", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Push third value", operation: "push", valueToPush: "third", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+
+		{testname: "Pop with first three values", operation: "pop", expectedPopValue: "third", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 2},
+
+		{testname: "Push fourth value", operation: "push", valueToPush: "fourth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+
+		{testname: "First pop after fourth push", operation: "pop", expectedPopValue: "fourth", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Second pop after fourth push", operation: "pop", expectedPopValue: "second", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 1},
+
+		{testname: "Push fifth value", operation: "push", valueToPush: "fifth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Push sixth value", operation: "push", valueToPush: "sixth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+		{testname: "Push seventh value", operation: "push", valueToPush: "seventh", expectStackToHaveBeenFull: true, expectedStackDepthAfterOperation: 4},
+		{testname: "Push eighth", operation: "push", valueToPush: "eighth", expectStackToHaveBeenFull: true, expectedStackDepthAfterOperation: 4},
+		{testname: "Push ninth value", operation: "push", valueToPush: "ninth", expectStackToHaveBeenFull: true, expectedStackDepthAfterOperation: 4},
+
+		{testname: "First pop after ninth push", operation: "pop", expectedPopValue: "ninth", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 3},
+		{testname: "Second pop after ninth push", operation: "pop", expectedPopValue: "eighth", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Third pop after ninth push", operation: "pop", expectedPopValue: "seventh", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Fourth pop after ninth push", operation: "pop", expectedPopValue: "sixth", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 0},
+		{testname: "Seventh pop after ninth push", operation: "pop", expectStackToHaveBeenEmpty: true, expectedStackDepthAfterOperation: 0},
+		{testname: "Eighth pop after ninth push", operation: "pop", expectStackToHaveBeenEmpty: true, expectedStackDepthAfterOperation: 0},
+	} {
+		testCase.evaluateAgainstStack(s, g)
+	}
+
+	s = stack.NewBoundedDiscardingStack(150)
+
+	// the code arbitrarily uses 100 as the append cutoff for discarding stacks
+	for i := 0; i < 149; i++ {
+		if stackWasAlreadyFull := s.Push("v"); stackWasAlreadyFull {
+			t.Fatalf("[Discarding Stack with 150 Depth] On push %d received stackWasAlreadyFull, expected stack to not be full", i)
+		}
+	}
+
+	if stackWasAlreadyFull := s.Push("v"); !stackWasAlreadyFull {
+		t.Fatalf("[Discarding Stack with 150 Depth] On push 150 received !stackWasAlreadyFull, expected stack to be full")
+	}
+
+	for i := 0; i < 150; i++ {
+		if _, stackWasAlreadyEmpty := s.Pop(); stackWasAlreadyEmpty {
+			t.Fatalf("[Discarding Stack with 150 Depth] On pop %d received stackWasAlreadyEmpty, expected stack to not be already empty", i)
+		}
+	}
+
+	if _, stackWasAlreadyEmpty := s.Pop(); !stackWasAlreadyEmpty {
+		t.Fatalf("[Discarding Stack with 150 Depth] On pop 151 received !stackWasAlreadyEmpty, expected stack to be already empty")
+	}
+
+}
+
 func TestReset(t *testing.T) {
 	g := NewGomegaWithT(t)
 	s := stack.NewStack()
@@ -104,6 +165,77 @@ func TestReset(t *testing.T) {
 	}
 }
 
+func testForPanic(functionThatShouldPanic func()) (functionDidPanic bool) {
+	c := make(chan bool)
+	go func(c chan bool, f func()) {
+		defer func() {
+			err := recover()
+			if err != nil {
+				c <- true
+			}
+		}()
+
+		functionThatShouldPanic()
+
+		c <- false
+	}(c, functionThatShouldPanic)
+
+	return <-c
+}
+
+func TestMaximumResizeSmaller(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	s := stack.NewStack().WithAMaximumDepthOf(6)
+
+	for _, testCase := range []*stackOperationTestCase{
+		{testname: "Push First Value", operation: "push", valueToPush: "first", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Push Second value", operation: "push", valueToPush: "second", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Push Third value", operation: "push", valueToPush: "third", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+		{testname: "Push Fourth value", operation: "push", valueToPush: "fourth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 4},
+		{testname: "Push Fifth value", operation: "push", valueToPush: "fifth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 5},
+		{testname: "Push Sixth value", operation: "push", valueToPush: "sixth", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 6},
+	} {
+		testCase.evaluateAgainstStack(s, g)
+	}
+
+	s.SetMaximumDepthTo(3)
+
+	for _, testCase := range []*stackOperationTestCase{
+		{testname: "First Pop After Resize", operation: "pop", expectedPopValue: "third", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Second Pop After Resize", operation: "pop", expectedPopValue: "second", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Third Pop After Resize", operation: "pop", expectedPopValue: "first", expectStackToHaveBeenEmpty: false, expectedStackDepthAfterOperation: 0},
+		{testname: "Fourth Pop After Resize", operation: "pop", expectStackToHaveBeenEmpty: true, expectedStackDepthAfterOperation: 0},
+	} {
+		testCase.evaluateAgainstStack(s, g)
+	}
+
+	for _, testCase := range []*stackOperationTestCase{
+		{testname: "Push First Value after resize", operation: "push", valueToPush: "first", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 1},
+		{testname: "Push Second value after resize", operation: "push", valueToPush: "second", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 2},
+		{testname: "Push Third value after resize", operation: "push", valueToPush: "third", expectStackToHaveBeenFull: false, expectedStackDepthAfterOperation: 3},
+		{testname: "Push Fourth value after resize", operation: "push", valueToPush: "fourth", expectStackToHaveBeenFull: true, expectedStackDepthAfterOperation: 3},
+		{testname: "Push Fifth value after resize", operation: "push", valueToPush: "fifth", expectStackToHaveBeenFull: true, expectedStackDepthAfterOperation: 3},
+		{testname: "Push Sixth value after resize", operation: "push", valueToPush: "sixth", expectStackToHaveBeenFull: true, expectedStackDepthAfterOperation: 3},
+	} {
+		testCase.evaluateAgainstStack(s, g)
+	}
+
+}
+
+func TestPanicConditions(t *testing.T) {
+	f := func() { stack.NewStack().WithAMaximumDepthOf(0) }
+	if functionDidPanic := testForPanic(f); !functionDidPanic {
+		t.Errorf("On NewStack WithMaximumDepthOf 0 expected panic, did not panic")
+	}
+
+	f = func() { stack.NewBoundedDiscardingStack(5).WithAMaximumDepthOf(10) }
+	if functionDidPanic := testForPanic(f); !functionDidPanic {
+		t.Errorf("On attempt to set MaximumDepth on DiscardingStack expected panic, did not panic")
+	}
+
+}
+
 type stackOperationTestCase struct {
 	testname                         string
 	operation                        string // "push", "pop", "check", "reset"
@@ -119,9 +251,9 @@ func (testCase *stackOperationTestCase) evaluateAgainstStack(s *stack.Stack, g *
 	case "push":
 		stackWasAlreadyFull := s.Push(testCase.valueToPush)
 		if testCase.expectStackToHaveBeenFull {
-			g.Expect(stackWasAlreadyFull).To(BeTrue(), fmt.Sprintf("[%s] stack have be full on push", testCase.testname))
+			g.Expect(stackWasAlreadyFull).To(BeTrue(), fmt.Sprintf("[%s] stack should have been full on push", testCase.testname))
 		} else {
-			g.Expect(stackWasAlreadyFull).To(BeFalse(), fmt.Sprintf("[%s] stack have be full on push", testCase.testname))
+			g.Expect(stackWasAlreadyFull).To(BeFalse(), fmt.Sprintf("[%s] stack should have been full on push", testCase.testname))
 		}
 	case "pop":
 		poppedValue, stackWasAlreadyEmpty := s.Pop()
@@ -138,7 +270,7 @@ func (testCase *stackOperationTestCase) evaluateAgainstStack(s *stack.Stack, g *
 	}
 
 	if s.Depth() != testCase.expectedStackDepthAfterOperation {
-		g.Expect(s.Depth()).To(Equal(testCase.expectedStackDepthAfterOperation), fmt.Sprintf("[%s] after %s stack depth should be %d", testCase.expectedPopValue, testCase.operation, testCase.expectedStackDepthAfterOperation))
+		g.Expect(s.Depth()).To(Equal(testCase.expectedStackDepthAfterOperation), fmt.Sprintf("[%s] after %s stack depth should be %d", testCase.testname, testCase.operation, testCase.expectedStackDepthAfterOperation))
 	}
 
 	if testCase.expectedStackDepthAfterOperation == 0 {

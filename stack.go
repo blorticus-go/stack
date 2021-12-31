@@ -14,6 +14,22 @@ func NewStack() *Stack {
 func NewStackWithInitialSizeHint(initialElementStorageSize uint) *Stack {
 	m := newStackManipulator(initialElementStorageSize)
 	go m.Start()
+
+	return &Stack{
+		manipulator:                       m,
+		channelOfOperationsForManipulator: m.requestChannel(),
+	}
+}
+
+func NewBoundedDiscardingStack(maximumNumberOfAllowedElements uint) *Stack {
+	initialSizeHint := uint(100)
+	if maximumNumberOfAllowedElements < 100 {
+		initialSizeHint = maximumNumberOfAllowedElements
+	}
+
+	m := newStackManipulator(initialSizeHint).whichDiscardsAtSize(maximumNumberOfAllowedElements)
+	go m.Start()
+
 	return &Stack{
 		manipulator:                       m,
 		channelOfOperationsForManipulator: m.requestChannel(),
@@ -21,6 +37,10 @@ func NewStackWithInitialSizeHint(initialElementStorageSize uint) *Stack {
 }
 
 func (stack *Stack) WithAMaximumDepthOf(maximumNumberOfAllowedElements uint) *Stack {
+	if stack.manipulator.discardsFIFOAfterMaxSize {
+		panic("You may not set a maximum stack depth with a discarding stack")
+	}
+
 	responseChannel := make(chan *stackManipulationResponse)
 	stack.channelOfOperationsForManipulator <- &stackManipulationMessage{
 		operation:       setMaximumDepth,
@@ -129,6 +149,7 @@ type stackManipulator struct {
 	currentStackDepth            uint
 	maximumStackDepth            uint
 	indexInSliceOfHead           int
+	discardsFIFOAfterMaxSize     bool
 }
 
 func newStackManipulator(initialSizeHint uint) *stackManipulator {
@@ -138,7 +159,14 @@ func newStackManipulator(initialSizeHint uint) *stackManipulator {
 		currentStackDepth:            0,
 		maximumStackDepth:            0,
 		indexInSliceOfHead:           -1,
+		discardsFIFOAfterMaxSize:     false,
 	}
+}
+
+func (manipulator *stackManipulator) whichDiscardsAtSize(maximumDepth uint) *stackManipulator {
+	manipulator.discardsFIFOAfterMaxSize = true
+	manipulator.maximumStackDepth = maximumDepth
+	return manipulator
 }
 
 func (manipulator *stackManipulator) requestChannel() chan<- *stackManipulationMessage {
@@ -174,6 +202,36 @@ func (manipulator *stackManipulator) Start() {
 }
 
 func (manipulator *stackManipulator) push(value interface{}) (stackWasAlreadyFull bool) {
+	if manipulator.discardsFIFOAfterMaxSize {
+		return manipulator.pushWithDiscarding(value)
+	}
+
+	return manipulator.pushWithoutDiscarding(value)
+
+}
+
+func (manipulator *stackManipulator) pushWithDiscarding(value interface{}) (stackWasAlreadyFull bool) {
+	manipulator.indexInSliceOfHead++
+
+	if manipulator.indexInSliceOfHead == int(manipulator.maximumStackDepth) {
+		manipulator.stackBackingSlice[0] = value
+		manipulator.indexInSliceOfHead = 0
+	} else {
+		if manipulator.indexInSliceOfHead == len(manipulator.stackBackingSlice) {
+			manipulator.stackBackingSlice = append(manipulator.stackBackingSlice, value)
+			manipulator.currentStackDepth++
+		} else {
+			manipulator.stackBackingSlice[manipulator.indexInSliceOfHead] = value
+			if manipulator.currentStackDepth < manipulator.maximumStackDepth {
+				manipulator.currentStackDepth++
+			}
+		}
+	}
+
+	return manipulator.currentStackDepth >= manipulator.maximumStackDepth
+}
+
+func (manipulator *stackManipulator) pushWithoutDiscarding(value interface{}) (stackWasAlreadyFull bool) {
 	if manipulator.maximumStackDepth > 0 && manipulator.currentStackDepth == manipulator.maximumStackDepth {
 		return true
 	}
@@ -200,6 +258,10 @@ func (manipulator *stackManipulator) pop() (value interface{}, stackWasAlreadyEm
 	manipulator.indexInSliceOfHead--
 	manipulator.currentStackDepth--
 
+	if manipulator.indexInSliceOfHead < 0 {
+		manipulator.indexInSliceOfHead = int(manipulator.maximumStackDepth) - 1
+	}
+
 	return value, false
 }
 
@@ -213,9 +275,14 @@ func (manipulator *stackManipulator) setMaximumDepth(newMaximumDepth uint) error
 		return fmt.Errorf("stack size must be at least 1")
 	}
 
-	if newMaximumDepth < manipulator.maximumStackDepth && newMaximumDepth > manipulator.currentStackDepth {
-		manipulator.currentStackDepth = newMaximumDepth
-		manipulator.indexInSliceOfHead = int(newMaximumDepth) - 1
+	if newMaximumDepth < manipulator.maximumStackDepth {
+		if manipulator.indexInSliceOfHead >= int(newMaximumDepth) {
+			manipulator.indexInSliceOfHead = int(newMaximumDepth) - 1
+		}
+
+		if manipulator.currentStackDepth >= newMaximumDepth {
+			manipulator.currentStackDepth = newMaximumDepth
+		}
 	}
 
 	manipulator.maximumStackDepth = newMaximumDepth
