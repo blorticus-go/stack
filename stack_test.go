@@ -236,6 +236,138 @@ func TestPanicConditions(t *testing.T) {
 
 }
 
+type typedPopTestCase struct {
+	testname      string
+	expectedValue interface{}
+}
+
+type conversionAttemptMessage struct {
+	msgType    string // "success", "does not match", "stack is empty", "panic"
+	panicError error
+}
+
+func (testCase *typedPopTestCase) attemptTypeConvertedPop(s *stack.Stack, conversionAttemptMessageChannel chan *conversionAttemptMessage) {
+	defer func(c chan *conversionAttemptMessage) {
+		if err := recover(); err != nil {
+			c <- &conversionAttemptMessage{
+				msgType:    "panic",
+				panicError: err.(error),
+			}
+		}
+	}(conversionAttemptMessageChannel)
+
+	switch testCase.expectedValue.(type) {
+	case int:
+		v, stackIsFull := s.PopInt()
+		if stackIsFull {
+			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "stack is empty"}
+			return
+		}
+
+		if v != testCase.expectedValue.(int) {
+			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "does not match"}
+			return
+		}
+
+		conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "success"}
+		return
+
+	case uint:
+		v, stackIsFull := s.PopUint()
+		if stackIsFull {
+			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "stack is empty"}
+			return
+		}
+
+		if v != testCase.expectedValue.(uint) {
+			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "does not match"}
+			return
+		}
+
+		conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "success"}
+		return
+
+	case string:
+		v, stackIsFull := s.PopString()
+		if stackIsFull {
+			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "stack is empty"}
+			return
+		}
+
+		if v != testCase.expectedValue.(string) {
+			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "does not match"}
+			return
+		}
+
+		conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "success"}
+		return
+
+	case byte:
+		v, stackIsFull := s.PopByte()
+		if stackIsFull {
+			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "stack is empty"}
+			return
+		}
+
+		if v != testCase.expectedValue.(byte) {
+			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "does not match"}
+			return
+		}
+
+		conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "success"}
+		return
+	}
+}
+
+func (testCase *typedPopTestCase) evaulateAgainstStack(s *stack.Stack) error {
+	conversionAttemptMessageChannel := make(chan *conversionAttemptMessage)
+	go testCase.attemptTypeConvertedPop(s, conversionAttemptMessageChannel)
+
+	msg := <-conversionAttemptMessageChannel
+
+	switch msg.msgType {
+	case "success":
+		return nil
+
+	case "does not match":
+		return fmt.Errorf("popped value does not match expected value")
+
+	case "stack is empty":
+		return fmt.Errorf("stack was empty before pop")
+
+	case "panic":
+		return fmt.Errorf("a panic occurred: %s", msg.panicError.Error())
+	}
+
+	return fmt.Errorf("an unexpected condition was returned")
+}
+
+func TestTypedPopping(t *testing.T) {
+	s := stack.NewStack()
+
+	for i, v := range []interface{}{
+		"string",
+		uint(10),
+		int(-10),
+		byte(100),
+	} {
+		if stackWasAlreadyFull := s.Push(v); stackWasAlreadyFull {
+			t.Errorf("On push %d expected stack to not be full but was", i+1)
+		}
+	}
+
+	for _, testCase := range []*typedPopTestCase{
+		{"pop of byte 100", byte(100)},
+		{"pop of int -10", int(-10)},
+		{"pop of uint 10", uint(10)},
+		{"pop of string 'string'", "string"},
+	} {
+		if err := testCase.evaulateAgainstStack(s); err != nil {
+			t.Errorf("[%s] %s", testCase.testname, err.Error())
+		}
+	}
+}
+
 type stackOperationTestCase struct {
 	testname                         string
 	operation                        string // "push", "pop", "check", "reset"
