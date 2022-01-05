@@ -237,8 +237,9 @@ func TestPanicConditions(t *testing.T) {
 }
 
 type typedPopTestCase struct {
-	testname      string
-	expectedValue interface{}
+	testname                   string
+	expectedValue              interface{}
+	expectStackToHaveBeenEmpty bool
 }
 
 type conversionAttemptMessage struct {
@@ -258,8 +259,8 @@ func (testCase *typedPopTestCase) attemptTypeConvertedPop(s *stack.Stack, conver
 
 	switch testCase.expectedValue.(type) {
 	case int:
-		v, stackIsFull := s.PopInt()
-		if stackIsFull {
+		v, stackIsEmpty := s.PopInt()
+		if stackIsEmpty {
 			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "stack is empty"}
 			return
 		}
@@ -273,8 +274,8 @@ func (testCase *typedPopTestCase) attemptTypeConvertedPop(s *stack.Stack, conver
 		return
 
 	case uint:
-		v, stackIsFull := s.PopUint()
-		if stackIsFull {
+		v, stackIsEmpty := s.PopUint()
+		if stackIsEmpty {
 			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "stack is empty"}
 			return
 		}
@@ -288,8 +289,8 @@ func (testCase *typedPopTestCase) attemptTypeConvertedPop(s *stack.Stack, conver
 		return
 
 	case string:
-		v, stackIsFull := s.PopString()
-		if stackIsFull {
+		v, stackIsEmpty := s.PopString()
+		if stackIsEmpty {
 			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "stack is empty"}
 			return
 		}
@@ -303,8 +304,8 @@ func (testCase *typedPopTestCase) attemptTypeConvertedPop(s *stack.Stack, conver
 		return
 
 	case byte:
-		v, stackIsFull := s.PopByte()
-		if stackIsFull {
+		v, stackIsEmpty := s.PopByte()
+		if stackIsEmpty {
 			conversionAttemptMessageChannel <- &conversionAttemptMessage{msgType: "stack is empty"}
 			return
 		}
@@ -333,7 +334,11 @@ func (testCase *typedPopTestCase) evaulateAgainstStack(s *stack.Stack) error {
 		return fmt.Errorf("popped value does not match expected value")
 
 	case "stack is empty":
-		return fmt.Errorf("stack was empty before pop")
+		if !testCase.expectStackToHaveBeenEmpty {
+			return fmt.Errorf("stack was empty before pop but that was not expected")
+		}
+
+		return nil
 
 	case "panic":
 		return fmt.Errorf("a panic occurred: %s", msg.panicError.Error())
@@ -357,10 +362,14 @@ func TestTypedPopping(t *testing.T) {
 	}
 
 	for _, testCase := range []*typedPopTestCase{
-		{"pop of byte 100", byte(100)},
-		{"pop of int -10", int(-10)},
-		{"pop of uint 10", uint(10)},
-		{"pop of string 'string'", "string"},
+		{"pop of byte 100", byte(100), false},
+		{"pop of int -10", int(-10), false},
+		{"pop of uint 10", uint(10), false},
+		{"pop of string 'string'", "string", false},
+		{testname: "pop int when stack is empty", expectedValue: int(0), expectStackToHaveBeenEmpty: true},
+		{testname: "pop uint when stack is empty", expectedValue: uint(0), expectStackToHaveBeenEmpty: true},
+		{testname: "pop string when stack is empty", expectedValue: "", expectStackToHaveBeenEmpty: true},
+		{testname: "pop byte when stack is empty", expectedValue: byte(0), expectStackToHaveBeenEmpty: true},
 	} {
 		if err := testCase.evaulateAgainstStack(s); err != nil {
 			t.Errorf("[%s] %s", testCase.testname, err.Error())

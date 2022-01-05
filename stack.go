@@ -124,6 +124,9 @@ func (stack *Stack) Pop() (value interface{}, stackWasEmptyBeforePop bool) {
 // Naturally, if the element isn't really a uint, a runtime error will be raised.
 func (stack *Stack) PopUint() (uint, bool) {
 	v, b := stack.Pop()
+	if v == nil {
+		return 0, b
+	}
 	return v.(uint), b
 }
 
@@ -131,6 +134,9 @@ func (stack *Stack) PopUint() (uint, bool) {
 // Naturally, if the element isn't really an iint, a runtime error will be raised.
 func (stack *Stack) PopInt() (int, bool) {
 	v, b := stack.Pop()
+	if v == nil {
+		return 0, b
+	}
 	return v.(int), b
 }
 
@@ -138,6 +144,9 @@ func (stack *Stack) PopInt() (int, bool) {
 // Naturally, if the element isn't really a byte, a runtime error will be raised.
 func (stack *Stack) PopByte() (byte, bool) {
 	v, b := stack.Pop()
+	if v == nil {
+		return 0, b
+	}
 	return v.(byte), b
 }
 
@@ -145,6 +154,9 @@ func (stack *Stack) PopByte() (byte, bool) {
 // Naturally, if the element isn't really a string, a runtime error will be raised.
 func (stack *Stack) PopString() (string, bool) {
 	v, b := stack.Pop()
+	if v == nil {
+		return "", b
+	}
 	return v.(string), b
 }
 
